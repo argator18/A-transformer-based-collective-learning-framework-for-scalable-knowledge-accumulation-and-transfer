@@ -233,6 +233,20 @@ train_task peg-insert-side-v2 1300000
 train_task window-open-v2 300000
 train_task window-close-v2 400000 # weird solution
 
+
+# evaluate single agents
+evaluate_task reach-v2 # -> 96/100
+evaluate_task push-v2
+evaluate_task pick-place-v2
+evaluate_task door-open-v2 # -> 100/100
+evaluate_task drawer-open-v2
+evaluate_task drawer-close-v2 # -> 100/100
+evaluate_task button-press-topdown-v2
+evaluate_task peg-insert-side-v2
+evaluate_task window-open-v2 # -> 98/100
+evaluate_task window-close-v2
+
+
 # prepare dataset for col network
 online_distill reach-v2
 online_distill push-v2
@@ -269,17 +283,6 @@ split_online_buffer peg-insert-side-v2
 split_online_buffer window-open-v2
 split_online_buffer window-close-v2
 
-# evaluate single agents
-evaluate_task reach-v2 # -> 96/100
-evaluate_task push-v2
-evaluate_task pick-place-v2
-evaluate_task door-open-v2 # -> 100/100
-evaluate_task drawer-open-v2
-evaluate_task drawer-close-v2 # -> 100/100
-evaluate_task button-press-topdown-v2
-evaluate_task peg-insert-side-v2
-evaluate_task window-open-v2 # -> 98/100
-evaluate_task window-close-v2
 
 
 # train trajectoryTransformer
@@ -311,16 +314,16 @@ evaluate_col_agent window-close-v2
 
 
 
-train_student reach-v2
-train_student push-v2
-train_student pick-place-v2
-train_student door-open-v2
-train_student drawer-open-v2
-train_student drawer-close-v2
-train_student button-press-topdown-v2
-train_student peg-insert-side-v2
-train_student window-open-v2
-train_student window-close-v2
+train_student reach-v2 100000
+train_student push-v2 100000
+train_student pick-place-v2 100000
+train_student door-open-v2 100000
+train_student drawer-open-v2 100000
+train_student drawer-close-v2 100000
+train_student button-press-topdown-v2 100000
+train_student peg-insert-side-v2 100000
+train_student window-open-v2 100000
+train_student window-close-v2 100000
 
 
 evaluate_student reach-v2

@@ -1052,6 +1052,7 @@ class Experiment(collective_experiment.Experiment):
             # calculate q_target and best action
             if step < exp_config.expert_train_step:
                 if not exp_config.use_scripted_mu:
+
                     mu, log_std, _ = self.col_agent.calculate_q_targets_expert_action(
                                                 states=states[self.env_indices],
                                                 actions=actions[self.env_indices],
@@ -1424,100 +1425,88 @@ class Experiment(collective_experiment.Experiment):
         raise NotImplementedError
 
     def generate_data_from_col_agent(self, tasks: List[str], num_episodes_per_task: int = 5) -> None:
-        """Generate rollouts by running the collective agent policy for each task, using numpy sequences."""
+        """Generate rollouts by running the collective agent policy for each task.
+        Transitions are stored with Q-values, policy parameters, and encodings.
+        """
         seq_len = self.seq_len
         action_dim = self.action_shape
 
-        for task_idx, task_name in enumerate(tasks):
-            task_data = random.choice(self.env_name_task_dict[task_name])
-            self.envs['train'].call('set_task', task_data)
+        print(f"Starting data generation from collective agent for {len(tasks)} tasks...")
 
-            result = self.evaluate_transformer(
-                agent=self.col_agent, vec_env=self.envs["eval"], step=step, episode=episode, seq_len=self.seq_len, sample_actions=(step==0), reward_unscaled=exp_config.use_unscaled
-            )
+        for task_idx, task_name in enumerate(tasks):
+            print(f"\n[Task {task_idx}] Generating data for task: {task_name}")
+            task_data = random.choice(self.env_name_task_dict[task_name])
+            self.envs["train"].call("set_task", task_data)
 
             for ep in range(num_episodes_per_task):
-                obs = self.envs['train'].reset()
+                print(f"  Episode {ep+1}/{num_episodes_per_task}")
+                obs = self.envs["train"].reset()
                 done = False
-                # initialize numpy buffers
-                state_buf = []  # list of np arrays shape (state_dim,)
-                action_buf = []  # list of np arrays shape (action_dim,)
-                reward_buf = []  # list of floats
+                step = 0
+                episode_reward = 0.0
 
-                while not done:
-                    # get raw obs numpy
-                    raw = obs['env_obs']
-                    if hasattr(raw, 'cpu'):
-                        raw_np = raw[0].cpu().numpy()
-                    else:
-                        raw_np = raw[0]
-                    # slice state dims
-                    s = np.concatenate([raw_np[:18], raw_np[36:]], axis=-1)
+                raw = obs["env_obs"][0]
+                raw_np = raw.cpu().numpy() if hasattr(raw, 'cpu') else raw
+                s = np.concatenate([raw_np[:18], raw_np[36:]], axis=-1)
+                states = torch.tensor(s, dtype=torch.float32, device=self.device)[None, None, :]
+                actions = torch.empty(1, 0, action_dim, device=self.device)
+                rewards = torch.empty(1, 0, 1, device=self.device)
 
-                    # append zero for first step
-                    if not action_buf:
-                        action_buf.append(np.zeros(action_dim, dtype=np.float32))
-                        reward_buf.append(0.0)
-                    state_buf.append(s)
-
-                                        # build fixed-length numpy sequences
-                    # determine state dimension from raw slice
-                    state_dim = s.shape[0]
-                    seq_s = np.zeros((seq_len, state_dim), dtype=np.float32)
-                    seq_a = np.zeros((seq_len, action_dim), dtype=np.float32)
-                    seq_r = np.zeros((seq_len, 1), dtype=np.float32)
-                    buf_len = len(state_buf)
-                    if buf_len >= seq_len:
-                        seq_s[:] = np.stack(state_buf[-seq_len:], axis=0)
-                        seq_a[:] = np.stack(action_buf[-seq_len:], axis=0)
-                        seq_r[:] = np.array(reward_buf[-seq_len:], dtype=np.float32).reshape(seq_len,1)
-                    else:
-                        seq_s[-buf_len:] = np.stack(state_buf, axis=0)
-                        seq_a[-buf_len:] = np.stack(action_buf, axis=0)
-                        seq_r[-buf_len:] = np.array(reward_buf, dtype=np.float32).reshape(buf_len,1)
-
-                    # convert sequences to torch once
-                    s_batch = torch.from_numpy(seq_s).unsqueeze(0).to(self.device)
-                    a_batch = torch.from_numpy(seq_a).unsqueeze(0).to(self.device)
-                    r_batch = torch.from_numpy(seq_r).unsqueeze(0).to(self.device)
-                    t_batch = torch.tensor([[task_idx]], device=self.device)
-
+                while not done and step < self.config.experiment.distill_ds_steps:
                     with agent_utils.eval_mode(self.col_agent):
                         mu, log_std, q_val = self.col_agent.calculate_q_targets_expert_action(
-                            states=s_batch, actions=a_batch, rewards=r_batch, task_ids=t_batch
+                            states=states,
+                            actions=actions,
+                            rewards=rewards,
+                            task_ids=torch.tensor([[task_idx]], device=self.device),
                         )
-                    action_np = mu[0].cpu().numpy()
+                        encoding = self.col_agent.calculate_task_encoding(
+                            states=states,
+                            actions=actions,
+                            rewards=rewards,
+                            task_ids=torch.tensor([[task_idx]], device=self.device),
+                        )
 
-                    next_obs, rewards, dones, infos = self.envs['train'].step(action_np)
-                    reward_val = float(rewards[0])
-                    done = bool(dones[0])
+                    action_np = mu[0]
 
-                    # get next obs
-                    raw_next = next_obs['env_obs']
-                    if hasattr(raw_next, 'cpu'):
-                        next_np = raw_next[0].cpu().numpy()
-                    else:
-                        next_np = raw_next[0]
-                    # slice next state
-                    s_next = np.concatenate([next_np[:18], next_np[36:]], axis=-1)
+                    next_obs, reward_arr, done_arr, info = self.envs["train"].step(action_np)
+                    reward = float(reward_arr[0])
+                    done = bool(done_arr[0])
+                    episode_reward += reward
 
-                    # add to buffer
+                    raw_next = next_obs["env_obs"][0]
+                    raw_next_np = raw_next.cpu().numpy() if hasattr(raw_next, 'cpu') else raw_next
+                    s_next = np.concatenate([raw_next_np[:18], raw_next_np[36:]], axis=-1)
+
                     self.replay_buffer.add(
-                        env_obs=s,
-                        action=action_np[0],
-                        reward=np.array([reward_val], dtype=np.float32),
-                        next_env_obs=s_next,
+                        env_obs=raw_np,
+                        next_env_obs=raw_next_np,
+                        action=action_np,
+                        reward=np.array([reward], dtype=np.float32),
                         done=done,
-                        task_obs=np.array([task_idx], dtype=np.int64)
+                        task_obs=np.array([task_idx], dtype=np.int64),
+                        encoding=encoding.detach().cpu().numpy(),
+                        q_value=q_val,
+                        mu=mu,
+                        log_std=log_std
                     )
 
-                    # update numpy buffers
-                    state_buf.append(s_next)
-                    action_buf.append(action_np[0])
-                    reward_buf.append(reward_val)
-                    obs = next_obs
-        print("Data generation complete.")
+                    s = s_next
+                    new_state = torch.tensor(s, dtype=torch.float32, device=self.device)[None, None, :]
+                    new_action = torch.tensor(action_np, dtype=torch.float32, device=self.device)[None, None, :]
+                    new_reward = torch.tensor([[reward]], dtype=torch.float32, device=self.device)[None, :, :]
 
+                    states = torch.cat((states[:, -seq_len+1:], new_state), dim=1)
+                    actions = torch.cat((actions[:, -seq_len+2:], new_action), dim=1)
+                    rewards = torch.cat((rewards[:, -seq_len+2:], new_reward), dim=1)
+
+                    obs = next_obs
+                    step += 1
+
+                print(f"    → Episode done in {step} steps, total reward: {episode_reward:.2f}")
+
+        print("\nData generation complete.")
+        print(f"Replay buffer now contains {len(self.replay_buffer)} transitions.")
 
     def distill_policy(self):
         """Run distillation from col_agent to student using KL divergence on logits."""
@@ -1534,7 +1523,8 @@ class Experiment(collective_experiment.Experiment):
         start_time = time.time()
 
         if self.replay_buffer.is_empty():
-            self.generate_data_from_col_agent(["reach-v2"],num_episodes_per_task=5)
+            tasks = self.config.experiment.distill_tasks
+            self.generate_data_from_col_agent(tasks, num_episodes_per_task=5)
 
 
         for step in range(distill_steps):
@@ -1544,7 +1534,8 @@ class Experiment(collective_experiment.Experiment):
                 return
 
             sample: ReplayBufferSample = self.replay_buffer.sample(batch_size)
-            obs = sample.observation.to(self.device)
+            obs = sample.env_obs.to(self.device)
+
 
             # Get teacher logits (e.g., Q-values or action logits)
             with torch.no_grad():

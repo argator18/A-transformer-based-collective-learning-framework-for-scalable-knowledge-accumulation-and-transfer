@@ -86,3 +86,6 @@ envs_to_exclude_during_training: []
 #---------------------distill policy--------------------------
 distill_steps: 200000
 batch_size: 32
+temperature: 1.0
+distill_tasks: ["reach-v2"]
+distill_ds_steps: 200
