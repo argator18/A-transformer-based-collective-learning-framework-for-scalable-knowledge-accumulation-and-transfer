@@ -3,20 +3,24 @@ name: collective_metaworld
 mode: train_worker # train_worker/online_distill_collective_transformer/distill_collective_transformer/evaluate_collective_transformer/train_student/train_student_finetuning/record
 builder:
   _target_: mtrl.experiment.${experiment.name}.Experiment
+
+verbose: false
   
 # --- train_worker ---
 init_steps: 0 #4000  - steps without training
 num_train_steps: 1000000 # - total nr of training steps 
 col_sampling_freq: 10000 # Every n-th steps policy generates data for distillation
 col_training_samples: 800 # multiple of stepsize (400) - number of samples for each distillation trigger (above)
-col_training_warmup: 8000 # steps before collective distllation
+col_training_warmup: 8000 # steps before collective distillation
 train_worker: True # training worker?
 use_unscaled: True # unscaled actions
-reset_goal_state: True # resets teh env goal after each episode
+reset_goal_state: True # resets the env goal after each episode
 reset_goal_state_in_oder: False # fixed order or randomly
 follow_scripted: False # scripted policy?
-early_stopping_threshold: 1
-early_stopping_window: 80
+early_stopping_threshold: 1.0 # accuracy necessary to stop early
+early_stopping_window: 250 # number of episodes to consider for above accuracy
+# TODO: The next one was before in evaluate_collective_transfermer but is used also here
+eval_freq: 4000 # # same as save frequency. This should be a muliple of save.buffer.size_per_chunk
 
 
 # --- record ---
@@ -59,7 +63,6 @@ latent_clustering_num: 1
 col_eval_freq: 1000 #150
 eval_latent_representation: False
 evaluate_unused: False
-eval_freq: 4000 # # same as save frequency. This should be a muliple of save.buffer.size_per_chunk
 num_eval_episodes: 10
 should_resume: True
 save: #

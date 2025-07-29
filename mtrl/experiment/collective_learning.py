@@ -19,6 +19,8 @@ from mtrl.utils.types import ConfigType, EnvMetaDataType, EnvsDictType, ListConf
 import torch.distributions as D
 from scipy.stats import norm
 import math
+import os, csv
+from datetime import datetime
 
 
 class Experiment(collective_experiment.Experiment):
@@ -181,6 +183,31 @@ class Experiment(collective_experiment.Experiment):
         """Run the experiment."""
         exp_config = self.config.experiment
 
+
+        if exp_config.name == None:
+            # Generate a timestamp like 2025-07-29_06-45-12
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+            reward_csv_path = os.path.join(
+                self.config.setup.log_dir, 
+                f"csv/worker/{self.config.env.benchmark.env_name}/reward_{timestamp}.csv"
+            )
+        else:
+            reward_csv_path = os.path.join(
+                self.config.setup.log_dir, 
+                f"csv/worker/{self.config.env.benchmark.env_name}/{exp_config.name}.csv"
+            )
+
+        
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(reward_csv_path), exist_ok=True)
+
+        # Create the CSV file with header only once
+        with open(reward_csv_path, mode='w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Step", "Reward"])  # Step=global training step, Reward=episode reward
+
+
         vec_env = self.envs["train"]
 
         episode_reward, episode_step, done = [
@@ -208,16 +235,23 @@ class Experiment(collective_experiment.Experiment):
         
         step = exp_config.num_train_step
         for step in range(self.start_step, exp_config.num_train_steps):
+            # get action
+            
+            # steps without training
             if step < exp_config.init_steps:
                 action = np.asarray(
                     [self.action_space.sample() for _ in range(vec_env.num_envs)]
                 )  # (num_envs, action_dim)
+
+            # scripted policy
             elif exp_config.follow_scripted:
                 for i in self.env_indices_i:
                     env_obs_i = {
                         key: value[self.env_indices[i]] for key, value in col_obs.items()
                     }
                     action[self.env_indices[i]] = np.clip(self.scripted_policies[i].get_action(self.scripted_policies[i], env_obs_i["env_obs"].cpu().numpy()), -1, 1)
+
+            # training agent
             else:
                 for i in self.env_indices_i:
                     with agent_utils.eval_mode(self.agent[i]):
@@ -233,6 +267,7 @@ class Experiment(collective_experiment.Experiment):
 
             # run training update
             if step >= exp_config.init_steps and exp_config.train_worker:
+                # update init_steps times after skipping them before, otherwise update only once
                 num_updates = (
                     exp_config.init_steps if step == exp_config.init_steps else 1
                 )
@@ -240,7 +275,7 @@ class Experiment(collective_experiment.Experiment):
                     for i in self.env_indices_i:
                         self.agent[i].update(self.replay_buffer[i], self.logger, step)
 
-            # copy latest transitions
+            # generate data for distillation: copy latest transitions
             if step % exp_config.col_sampling_freq == 0 and step > exp_config.col_training_warmup:
                 for i in self.env_indices_i:
                     idx = self.replay_buffer[i].idx
@@ -280,9 +315,12 @@ class Experiment(collective_experiment.Experiment):
             if self.should_reset_env_manually:
                 if (episode_step[0] + 1) % self.max_episode_steps == 0:
                     # we do a +1 because we started the counting from 0 and episode_step is incremented after updating the buffer
+                    # reset environment after episode
                     if exp_config.reset_goal_state:
+                        # reset with an order
                         if exp_config.reset_goal_state_in_order:
                             self.reset_goal_locations_in_order()
+                        # reset randomly
                         else:
                             self.reset_goal_locations()
                     next_col_obs = vec_env.reset()
@@ -304,8 +342,16 @@ class Experiment(collective_experiment.Experiment):
                 )
 
             if step % self.max_episode_steps == 0:
-                self.logger.log("train/episode", episode, step) # moved up here
+                self.logger.log("train/episode", episode, step)
                 if step > 0:
+                    # Compute mean episode reward across all envs
+                    avg_episode_reward = episode_reward.mean()
+
+                    # Append to CSV
+                    with open(reward_csv_path, mode='a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([step, avg_episode_reward])
+
                     if "success" in self.metrics_to_track:
                         success = (success > 0).astype("float")
                         for index in self.env_indices:
@@ -329,9 +375,15 @@ class Experiment(collective_experiment.Experiment):
 
                     # EARLY STOPPING: stop training if success rate is good enough
                     self.success_history.append(success.mean())
+                    # Truncate to sliding window
+                    if len(self.success_history) > exp_config.early_stopping_window:
+                        self.success_history.pop(0)
+
+                    # only stop if the last window many evaluations achieve a score above the threshold
                     if len(self.success_history) == exp_config.early_stopping_window and np.mean(self.success_history) >= exp_config.early_stopping_threshold:
                         print(f"Early stopping triggered at step {step} with avg success over {exp_config.early_stopping_window} evals: {np.mean(self.success_history):.2f}")
                         break
+
 
 
                 # evaluate agent periodically
@@ -345,9 +397,6 @@ class Experiment(collective_experiment.Experiment):
                 if "success" in self.metrics_to_track:
                     success = np.full(shape=vec_env.num_envs, fill_value=0.0)
                 
-                #self.logger.log("train/episode", episode, step)  
-
-
                 if step % exp_config.save_freq == 0:
                     self.save_all_buffers_and_models(step)
                 if step % self.config.experiment.save_video_freq == 0 and self.config.experiment.save_video and step > 0:
@@ -558,6 +607,7 @@ class Experiment(collective_experiment.Experiment):
 
     def run_online_distillation(self):
         """Run training of student experiment."""
+        exit()
         exp_config = self.config.experiment
 
         vec_env = self.envs["train"]

@@ -1,0 +1,34 @@
+RESULTS expert:
+/home/len1218/documents/BT/framework/logs/results/worker/push-v2:Evaluation: [17.] from 100
+/home/len1218/documents/BT/framework/logs/results/worker/window-open-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/worker/pick-place-v2:Evaluation: [0.] from 100
+/home/len1218/documents/BT/framework/logs/results/worker/button-press-topdown-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/worker/reach-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/worker/peg-insert-side-v2:Evaluation: [4.] from 100
+/home/len1218/documents/BT/framework/logs/results/worker/door-open-v2:Evaluation: [98.] from 100
+/home/len1218/documents/BT/framework/logs/results/worker/drawer-close-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/worker/drawer-open-v2:Evaluation: [88.] from 100
+/home/len1218/documents/BT/framework/logs/results/worker/window-close-v2:Evaluation: [100.] from 100
+RESULTS collective network:
+/home/len1218/documents/BT/framework/logs/results/col/push-v2:Evaluation: [55.] from 100
+/home/len1218/documents/BT/framework/logs/results/col/window-open-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/col/pick-place-v2:Evaluation: [52.] from 100
+/home/len1218/documents/BT/framework/logs/results/col/button-press-topdown-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/col/reach-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/col/peg-insert-side-v2:Evaluation: [1.] from 100
+/home/len1218/documents/BT/framework/logs/results/col/door-open-v2:Evaluation: [99.] from 100
+/home/len1218/documents/BT/framework/logs/results/col/drawer-close-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/col/drawer-open-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/col/window-close-v2:Evaluation: [100.] from 100
+RESULTS student:
+/home/len1218/documents/BT/framework/logs/results/student/push-v2:Evaluation: [0.] from 100
+/home/len1218/documents/BT/framework/logs/results/student/window-open-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/student/pick-place-v2:Evaluation: [0.] from 100
+/home/len1218/documents/BT/framework/logs/results/student/button-press-topdown-v2:Evaluation: [20.] from 100
+/home/len1218/documents/BT/framework/logs/results/student/reach-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/student/peg-insert-side-v2:Evaluation: [0.] from 100
+/home/len1218/documents/BT/framework/logs/results/student/door-open-v2:Evaluation: [66.] from 100
+/home/len1218/documents/BT/framework/logs/results/student/drawer-close-v2:Evaluation: [100.] from 100
+/home/len1218/documents/BT/framework/logs/results/student/drawer-open-v2:Evaluation: [0.] from 100
+/home/len1218/documents/BT/framework/logs/results/student/window-close-v2:Evaluation: [0.] from 100
+

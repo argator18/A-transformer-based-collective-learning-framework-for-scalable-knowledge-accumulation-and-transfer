@@ -1,8 +1,12 @@
 ### Removing models ###
-rm_model(){
+rm_results(){
+   rm -r logs/results 
+   rm -r logs/csv
+}
+rm_worker(){
     local task_name="$1"
     if [[ -z "$task_name" ]]; then
-        echo "Usage: rm_model <task-name>"
+        echo "Usage: rm_worker <task-name>"
         return 1
     fi
 
@@ -15,7 +19,7 @@ rm_model(){
 rm_student(){
     local task_name="$1"
     if [[ -z "$task_name" ]]; then
-        echo "Usage: rm_model <task-name>"
+        echo "Usage: rm_worker <task-name>"
         return 1
     fi
 
@@ -30,6 +34,7 @@ rm_col_model(){
 
 
 ### Training models ###
+# with experiment.name=<some_name> you can select the output csv file name 
 train_task(){
     local task_name="$1"
     local nr_steps="$2"
@@ -97,10 +102,10 @@ train_student(){
 }
 
 ### Evaluating models ###
-evaluate_task() {
+evaluate_worker() {
     local task_name="$1"
     if [[ -z "$task_name" ]]; then
-        echo "Usage: evaluate_task <task-name>"
+        echo "Usage: evaluate_worker <task-name>"
         return 1
     fi
 
@@ -123,7 +128,7 @@ evaluate_task() {
 evaluate_student() {
     local task_name="$1"
     if [[ -z "$task_name" ]]; then
-        echo "Usage: evaluate_task <task-name>"
+        echo "Usage: evaluate_worker <task-name>"
         return 1
     fi
 
@@ -209,7 +214,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     echo "Executing..."
 else
   #echo "Script was sourced"
-    return
+    return 0
 fi
 
 
@@ -217,34 +222,61 @@ fi
 #       execution                                                                           #
 #############################################################################################
 
+# final evaluation results are stored here
 mkdir -p ${PROJECT_ROOT}/logs/results/worker
 mkdir -p ${PROJECT_ROOT}/logs/results/col
 mkdir -p ${PROJECT_ROOT}/logs/results/student
 
+# the csv files are generated here to track the reward over steps
+mkdir -p ${PROJECT_ROOT}/logs/csv/worker
+mkdir -p ${PROJECT_ROOT}/logs/csv/col
+mkdir -p ${PROJECT_ROOT}/logs/csv/student
+# remove worker models
+#rm_worker reach-v2 # -> 96/100
+rm_worker push-v2
+rm_worker pick-place-v2
+rm_worker door-open-v2 # -> 100/100
+rm_worker drawer-open-v2
+rm_worker drawer-close-v2 # -> 100/100
+rm_worker button-press-topdown-v2
+rm_worker peg-insert-side-v2
+rm_worker window-open-v2 # -> 98/100
+rm_worker window-close-v2
+
 # train experts
-train_task reach-v2 100000 worker.builder.actor_update_freq=1
-train_task push-v2 900000
-train_task pick-place-v2 2400000
-train_task door-open-v2 1000000
-train_task drawer-open-v2 500000  # maybe more samples
+#train_task reach-v2 300000 worker.builder.actor_update_freq=1 # second one needed?
+#train_task push-v2 1500000 \
+#    replay_buffer.replay_buffer.batch_size=1024 \
+#    worker.optimizers.actor.lr=5e-4 \
+#    worker.optimizers.critic.lr=5e-4
+#train_task pick-place-v2 3000000 \
+#    replay_buffer.replay_buffer.batch_size=1024 \
+#    worker.optimizers.actor.lr=1e-4 \
+#    worker.optimizers.critic.lr=1e-4
+train_task door-open-v2 1500000
+train_task drawer-open-v2 1000000  # maybe more samples
 train_task drawer-close-v2 200000
 train_task button-press-topdown-v2 500000 # may need some finetuning
-train_task peg-insert-side-v2 1300000
+train_task peg-insert-side-v2 2000000 \
+    replay_buffer.replay_buffer.batch_size=1024 \
+    worker.optimizers.actor.lr=1e-4 \
+    worker.optimizers.critic.lr=1e-4
 train_task window-open-v2 300000
 train_task window-close-v2 400000 # weird solution
 
+return
 
 # evaluate single agents
-evaluate_task reach-v2 # -> 96/100
-evaluate_task push-v2
-evaluate_task pick-place-v2
-evaluate_task door-open-v2 # -> 100/100
-evaluate_task drawer-open-v2
-evaluate_task drawer-close-v2 # -> 100/100
-evaluate_task button-press-topdown-v2
-evaluate_task peg-insert-side-v2
-evaluate_task window-open-v2 # -> 98/100
-evaluate_task window-close-v2
+evaluate_worker reach-v2 # -> 96/100
+evaluate_worker push-v2
+evaluate_worker pick-place-v2
+evaluate_worker door-open-v2 # -> 100/100
+evaluate_worker drawer-open-v2
+evaluate_worker drawer-close-v2 # -> 100/100
+evaluate_worker button-press-topdown-v2
+evaluate_worker peg-insert-side-v2
+evaluate_worker window-open-v2 # -> 98/100
+evaluate_worker window-close-v2
 
 
 # prepare dataset for col network
@@ -315,15 +347,15 @@ evaluate_col_agent window-close-v2
 
 
 train_student reach-v2 100000
-train_student push-v2 100000
-train_student pick-place-v2 100000
-train_student door-open-v2 100000
-train_student drawer-open-v2 100000
+train_student push-v2 500000
+train_student pick-place-v2 500000
+train_student door-open-v2 500000
+train_student drawer-open-v2 500000
 train_student drawer-close-v2 100000
-train_student button-press-topdown-v2 100000
-train_student peg-insert-side-v2 100000
+train_student button-press-topdown-v2 500000
+train_student peg-insert-side-v2 500000
 train_student window-open-v2 100000
-train_student window-close-v2 100000
+train_student window-close-v2 500000
 
 
 evaluate_student reach-v2

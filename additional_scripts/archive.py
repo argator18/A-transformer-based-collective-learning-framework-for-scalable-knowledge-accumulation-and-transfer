@@ -1,10 +1,14 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import sys
 
 # only used for visualization in thesis
 
 file_path1 = "/home/andi/Desktop/LRZ Sync+Share/Master/5. Semester/Master thesis/Thesis/KLvsMSE/with_noise.csv"  # Replace with your first file path
 file_path2 = "/home/andi/Desktop/LRZ Sync+Share/Master/5. Semester/Master thesis/Thesis/KLvsMSE/without_noise.csv"  # Replace with your second file path
+file_path1 = "/home/len1218/documents/BT/framework/logs/experiment_test/episode_reward.csv"
+file_path2 = "/home/len1218/documents/BT/framework/logs/experiment_test/episode_reward.csv"
+file_path1 = file_path2 = sys.argv[1]
 
 data1 = pd.read_csv(file_path1)  # First dataset
 data2 = pd.read_csv(file_path2)  # Second dataset
@@ -31,7 +35,8 @@ plt.ylabel('Value', fontsize=12)
 plt.legend()
 plt.grid(True)
 
-plt.savefig(f'/home/andi/Desktop/mtrl/additional_scripts/graphs/KLvsMSE.svg', format='svg')
+#plt.savefig(f'/home/andi/Desktop/mtrl/additional_scripts/graphs/KLvsMSE.svg', format='svg')
+plt.savefig(f'graphs/graph.svg', format='svg')
 
 # Show the plot
 plt.show()

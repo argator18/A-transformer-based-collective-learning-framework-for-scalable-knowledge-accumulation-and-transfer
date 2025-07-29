@@ -15,7 +15,9 @@ def run(config: ConfigType) -> None:
     Args:
         config (ConfigType): config for the experiment.
     """
-    config_utils.pretty_print(config, resolve=False)
+    if getattr(config.experiment, "verbose", False):
+        config_utils.pretty_print(config, resolve=False)
+
     config_id = config.setup.id
     logbook_config = hydra.utils.call(config.logbook)
     if "mongo" in logbook_config["loggers"] and (
@@ -30,9 +32,16 @@ def run(config: ConfigType) -> None:
     config_to_write = config_utils.to_dict(config)
 
     config_to_write["status"] = "RUNNING"
-    logbook.write_metadata(config_to_write)
+    if getattr(config, "verbose", False):
+        logbook.write_metadata(config_to_write)
+    else:
+        logbook.write_metadata({"status": "RUNNING", "id": config.setup.id})
+
 
     experiment_utils.prepare_and_run(config=config)
 
     config_to_write["status"] = "COMPLETED"
-    logbook.write_metadata(config_to_write)
+    if getattr(config, "verbose", False):
+        logbook.write_metadata(config_to_write)
+    else:
+        logbook.write_metadata({"status": "RUNNING", "id": config.setup.id})
