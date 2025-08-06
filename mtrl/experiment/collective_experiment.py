@@ -337,7 +337,7 @@ class Experiment(checkpointable.Checkpointable):
             self.replay_buffer = hydra.utils.instantiate(
                 self.config.replay_buffer.transformer_col_replay_buffer,
                 normalize_rewards=False,
-                #batch_size=self.config.replay_buffer['batch_size'],
+                batch_size=self.config.replay_buffer['batch_size'],
                 device=self.device,
                 env_obs_shape=env_obs_shape,
                 task_obs_shape=(1,),
@@ -447,8 +447,7 @@ class Experiment(checkpointable.Checkpointable):
                 self.student.load_latest_step(model_dir=col_model_dir)
         
         elif self.config.experiment.mode == 'distill_policy':
-            # Instantiate teacher and student agents
-            self.teacher_agent = hydra.utils.instantiate(
+            self.col_agent = hydra.utils.instantiate(
                 self.config.transformer_collective_network.builder,
                 env_obs_shape=env_obs_shape,
                 action_shape=action_shape,
@@ -458,6 +457,15 @@ class Experiment(checkpointable.Checkpointable):
                 ],
                 device=self.device,
             )
+
+            self.col_model_dir = utils.make_dir(
+                os.path.join(self.config.setup.save_dir, "model_dir/model_col")
+            )
+
+            self.col_start_step = self.col_agent.load_latest_step(model_dir=self.col_model_dir)
+            
+
+
             self.student_agent = hydra.utils.instantiate(
                 self.config.student.builder,
                 env_obs_shape=env_obs_shape,
@@ -469,31 +477,16 @@ class Experiment(checkpointable.Checkpointable):
                 device=self.device,
             )
 
-            # Load teacher model if needed
-            self.teacher_model_dir = utils.make_dir(
-                os.path.join(self.config.setup.save_dir, "model_dir/model_col")
-            )
-            self.teacher_agent.load_latest_step(model_dir=self.teacher_model_dir)
 
             # Student model dir
             self.student_model_dir = utils.make_dir(
                 os.path.join(self.config.setup.save_dir, "model_dir/student_model")
             )
 
-            # Replay buffer used for distillation
-            self.buffer_dir = utils.make_dir(
-                os.path.join(self.config.setup.save_dir, f"buffer/policy_distill_{self.task_names[0]}_seed_{self.config.setup.seed}")
-            )
-            self.col_agent = hydra.utils.instantiate(
-                self.config.transformer_collective_network.builder,
-                env_obs_shape=env_obs_shape,
-                action_shape=action_shape,
-                action_range=[
-                    float(self.action_space.low.min()),
-                    float(self.action_space.high.max()),
-                ],
-                device=self.device,
-            )
+            ## Replay buffer used for distillation
+            #self.buffer_dir = utils.make_dir(
+            #    os.path.join(self.config.setup.save_dir, f"buffer/policy_distill_{self.task_names[0]}_seed_{self.config.setup.seed}")
+            #)
 
             self.replay_buffer = hydra.utils.instantiate(
                 self.config.replay_buffer.transformer_col_replay_buffer,
@@ -507,9 +500,9 @@ class Experiment(checkpointable.Checkpointable):
                 seq_len=self.seq_len,
                 compressed_state= False
             )
-            self.replay_buffer.load(save_dir=self.buffer_dir)
+            #self.replay_buffer.load(save_dir=self.buffer_dir)
 
-            self.start_step = 0
+            #self.start_step = 0
 
         else:
             raise NotImplementedError(

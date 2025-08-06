@@ -110,3 +110,13 @@ col_eval:
     [batch_reward_agent_index_, AGENT_, float, average],
     [critic_loss, CLOSS, float, average],
   ]
+
+distill:
+  [
+    [step, S, int, average],
+    [duration, D, time, average],
+    [loss, LOSS, float, average],
+    [kl_div, KLD, float, average],
+    [mu_div, MUD, float, average],
+    [log_std_div, STD, float, average],
+  ]

@@ -5,6 +5,7 @@ builder:
   _target_: mtrl.experiment.${experiment.name}.Experiment
 
 verbose: false
+csv_name: None
   
 # --- train_worker ---
 init_steps: 0 #4000  - steps without training
@@ -17,8 +18,9 @@ use_unscaled: True # unscaled actions
 reset_goal_state: True # resets the env goal after each episode
 reset_goal_state_in_oder: False # fixed order or randomly
 follow_scripted: False # scripted policy?
-early_stopping_threshold: 1.0 # accuracy necessary to stop early
-early_stopping_window: 250 # number of episodes to consider for above accuracy
+early_stopping_success: 1.0 # mean accuracy necessary to stop early
+early_stopping_reward: 10000 # reward variance necessary to stop early
+early_stopping_window: 100 # number of episodes to consider for above accuracy
 # TODO: The next one was before in evaluate_collective_transfermer but is used also here
 eval_freq: 4000 # # same as save frequency. This should be a muliple of save.buffer.size_per_chunk
 
@@ -87,7 +89,7 @@ envs_to_exclude_during_training: []
 # ["reach-v2", "push-v2", "pick-place-v2", "door-open-v2", "drawer-open-v2", "drawer-close-v2", "button-press-topdown-v2", "peg-insert-side-v2", "window-open-v2", "window-close-v2"]
 #
 #---------------------distill policy--------------------------
-distill_steps: 200000
+distill_steps: 100000
 batch_size: 32
 temperature: 1.0
 distill_tasks: ["reach-v2"]

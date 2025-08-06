@@ -200,7 +200,7 @@ class Logger(object):
         }
 
     def log(self, key, value, step, n=1, tb_log:bool=True, only_tb_log:bool=False):
-        assert key.startswith("train") or key.startswith("eval") or key.startswith("col_train") or key.startswith("col_eval")
+        assert key.startswith("train") or key.startswith("eval") or key.startswith("col_train") or key.startswith("col_eval") or key.startswith("distill")
         if type(value) == torch.Tensor:
             value = value.item()
         mode, key = key.split("/", 1)

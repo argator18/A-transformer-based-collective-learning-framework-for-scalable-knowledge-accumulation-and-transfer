@@ -13,7 +13,7 @@ rm_worker(){
     echo "Removing task: $task_name"
     rm logs/experiment_test/model_dir/model_${task_name}_seed_1/*
     rm logs/experiment_test/buffer/buffer/buffer_${task_name}_seed_1/*
-    rm logs/experiment_test/buffer/buffer_distill/buffer_distill_${task_name}_seed_1/0_*
+    rm logs/experiment_test/buffer/buffer_distill/buffer_distill_${task_name}_seed_1/*
     rm logs/experiment_test/buffer/buffer_distill_tmp/buffer_distill_tmp_${task_name}_seed_1/*
 }
 rm_student(){
@@ -35,13 +35,13 @@ rm_col_model(){
 
 ### Training models ###
 # with experiment.name=<some_name> you can select the output csv file name 
-train_task(){
+train_worker(){
     local task_name="$1"
     local nr_steps="$2"
     shift 2  # Remove the first two arguments from the list
 
     if [[ -z "$task_name" || -z "$nr_steps" ]]; then
-        echo "Usage: train_task <task-name> <nr-steps> [additional args]"
+        echo "Usage: train_worker <task-name> <nr-steps> [additional args]"
         return 1
     fi
 
@@ -101,7 +101,35 @@ train_student(){
         #experiment.num_train_steps="${nr_steps}" \
 }
 
+distill_policy(){
+    python3 -u main.py \
+        setup=metaworld \
+        env=metaworld-mt1 \
+        worker.multitask.num_envs=1 \
+        experiment.mode=distill_policy 
+}
+
 ### Evaluating models ###
+evaluate_task(){
+    local task_name="$1"
+    if [[ -z "$task_name" ]]; then
+        echo "Usage: evaluate_worker <task-name>"
+        return 1
+    fi
+
+    echo "Evaluating expert for task: $task_name"
+
+    local result_path="${PROJECT_ROOT}/logs/results/worker/$task_name"
+
+    python3 -u main.py \
+        setup=metaworld \
+        env=metaworld-mt1 \
+        worker.multitask.num_envs=1 \
+        experiment.mode=evaluate_collective_transformer \
+        env.benchmark.env_name=${task_name} \
+        experiment.evaluate_transformer="agent" | tee -a $result_path
+}
+
 evaluate_worker() {
     local task_name="$1"
     if [[ -z "$task_name" ]]; then
@@ -233,36 +261,39 @@ mkdir -p ${PROJECT_ROOT}/logs/csv/col
 mkdir -p ${PROJECT_ROOT}/logs/csv/student
 # remove worker models
 #rm_worker reach-v2 # -> 96/100
-rm_worker push-v2
-rm_worker pick-place-v2
-rm_worker door-open-v2 # -> 100/100
-rm_worker drawer-open-v2
-rm_worker drawer-close-v2 # -> 100/100
-rm_worker button-press-topdown-v2
-rm_worker peg-insert-side-v2
-rm_worker window-open-v2 # -> 98/100
-rm_worker window-close-v2
+#rm_worker push-v2
+#rm_worker pick-place-v2
+#rm_worker door-open-v2 # -> 100/100
+#rm_worker drawer-open-v2
+#rm_worker drawer-close-v2 # -> 100/100
+#rm_worker button-press-topdown-v2
+#rm_worker peg-insert-side-v2
+#rm_worker window-open-v2 # -> 98/100
+#rm_worker window-close-v2
 
 # train experts
-#train_task reach-v2 300000 worker.builder.actor_update_freq=1 # second one needed?
-#train_task push-v2 1500000 \
-#    replay_buffer.replay_buffer.batch_size=1024 \
+#train_worker reach-v2 300000 worker.builder.actor_update_freq=1 # second one needed?
+#train_worker door-open-v2 1500000
+#train_worker drawer-open-v2 1000000  # maybe more samples
+#train_worker drawer-close-v2 1000000 #200000
+#train_worker button-press-topdown-v2 1000000 # may need some finetuning
+#train_worker window-open-v2 500000
+#train_worker window-close-v2 400000 # weird solution
+
+train_worker push-v2 1500000 \
+    replay_buffer.replay_buffer.batch_size=1024 
 #    worker.optimizers.actor.lr=5e-4 \
 #    worker.optimizers.critic.lr=5e-4
-#train_task pick-place-v2 3000000 \
-#    replay_buffer.replay_buffer.batch_size=1024 \
+
+train_worker pick-place-v2 3000000 \
+    replay_buffer.replay_buffer.batch_size=1024 
 #    worker.optimizers.actor.lr=1e-4 \
 #    worker.optimizers.critic.lr=1e-4
-train_task door-open-v2 1500000
-train_task drawer-open-v2 1000000  # maybe more samples
-train_task drawer-close-v2 200000
-train_task button-press-topdown-v2 500000 # may need some finetuning
-train_task peg-insert-side-v2 2000000 \
-    replay_buffer.replay_buffer.batch_size=1024 \
-    worker.optimizers.actor.lr=1e-4 \
-    worker.optimizers.critic.lr=1e-4
-train_task window-open-v2 300000
-train_task window-close-v2 400000 # weird solution
+
+train_worker peg-insert-side-v2 2000000 \
+    replay_buffer.replay_buffer.batch_size=1024 
+    #worker.optimizers.actor.lr=1e-4 \
+    #worker.optimizers.critic.lr=1e-4
 
 return
 

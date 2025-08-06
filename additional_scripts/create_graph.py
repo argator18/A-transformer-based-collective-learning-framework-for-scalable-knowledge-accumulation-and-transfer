@@ -8,6 +8,7 @@ file_path = sys.argv[1]
 data = pd.read_csv(file_path)
 
 # Get base name of the input file without extension
+print(file_path)
 input_base = os.path.splitext(os.path.basename(file_path))[0]
 
 # Ensure an output folder for the graphs

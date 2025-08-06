@@ -20,3 +20,22 @@ model to evaluate:
 `logs/experiment_test/evaluation_models`
 
 
+### How are those trained and what accuracy:
+
+
+
+reach-v2: 100
+door-open-v2: 100
+window-open-v2: 100
+drawer-open-v2: 100
+drawer-close-v2: 100
+button-press-topdown-v2: 100
+window-close-v2: 100
+
+
+
+peg-insert-side-v2
+push-v2
+pick-place-v2
+
+

@@ -39,6 +39,7 @@ class Experiment(collective_experiment.Experiment):
         }
         # Early stopping:
         from collections import deque
+        self.reward_history = deque(maxlen=self.config.experiment.early_stopping_window)
         self.success_history = deque(maxlen=self.config.experiment.early_stopping_window)
 
 
@@ -184,18 +185,18 @@ class Experiment(collective_experiment.Experiment):
         exp_config = self.config.experiment
 
 
-        if exp_config.name == None:
+        if exp_config.csv_name == None or exp_config.csv_name == "None":
             # Generate a timestamp like 2025-07-29_06-45-12
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
             reward_csv_path = os.path.join(
                 self.config.setup.log_dir, 
-                f"csv/worker/{self.config.env.benchmark.env_name}/reward_{timestamp}.csv"
+                f"csv/worker/{self.config.env.benchmark.env_name}/{self.config.env.benchmark.env_name}_{timestamp}.csv"
             )
         else:
             reward_csv_path = os.path.join(
                 self.config.setup.log_dir, 
-                f"csv/worker/{self.config.env.benchmark.env_name}/{exp_config.name}.csv"
+                f"csv/worker/{self.config.env.benchmark.env_name}/{exp_config.csv_name}.csv"
             )
 
         
@@ -203,7 +204,7 @@ class Experiment(collective_experiment.Experiment):
         os.makedirs(os.path.dirname(reward_csv_path), exist_ok=True)
 
         # Create the CSV file with header only once
-        with open(reward_csv_path, mode='w', newline='') as f:
+        with open(reward_csv_path, mode='a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(["Step", "Reward"])  # Step=global training step, Reward=episode reward
 
@@ -374,15 +375,22 @@ class Experiment(collective_experiment.Experiment):
                     self.logger.dump(step)
 
                     # EARLY STOPPING: stop training if success rate is good enough
+                    self.reward_history.append(avg_episode_reward)
                     self.success_history.append(success.mean())
                     # Truncate to sliding window
+                    if len(self.reward_history) > exp_config.early_stopping_window:
+                        self.reward_history.pop(0)
+
                     if len(self.success_history) > exp_config.early_stopping_window:
                         self.success_history.pop(0)
 
                     # only stop if the last window many evaluations achieve a score above the threshold
-                    if len(self.success_history) == exp_config.early_stopping_window and np.mean(self.success_history) >= exp_config.early_stopping_threshold:
-                        print(f"Early stopping triggered at step {step} with avg success over {exp_config.early_stopping_window} evals: {np.mean(self.success_history):.2f}")
+                    if len(self.reward_history) == exp_config.early_stopping_window and np.var(self.reward_history) <= exp_config.early_stopping_reward and np.mean(self.success_history) >= exp_config.early_stopping_success:
+                        print(f"Early stopping triggered at step {step} with avg success over {exp_config.early_stopping_window} evals: {np.mean(self.reward_history):.2f}")
                         break
+                    else: 
+                        print(np.var(self.reward_history), np.mean(self.success_history))
+
 
 
 
@@ -1030,6 +1038,7 @@ class Experiment(collective_experiment.Experiment):
 
         for step in range(self.start_step, exp_config.num_student_online_trainsteps2):
             if step % self.max_episode_steps == 0:
+                print(states)
                 if step > 0:
                     if "success" in self.metrics_to_track:
                         success = (success > 0).astype("float")
@@ -1083,6 +1092,7 @@ class Experiment(collective_experiment.Experiment):
                     print('Recording videos ...')
                     self.record_videos(eval_agent="student", tag=f"student_step{step}")
 
+            # exploration -> sample actions
             if step < exp_config.init_steps_stu2:
                 action = np.asarray(
                     [self.action_space.sample() for _ in range(vec_env.num_envs)]
@@ -1109,6 +1119,7 @@ class Experiment(collective_experiment.Experiment):
                                                 rewards=rewards[self.env_indices],
                                                 task_ids=torch.tensor(self.task_num[self.env_indices_i])
                                             )
+                # use scripted policy
                 else:
                     env_obs_i = {
                         key: value[0] for key, value in col_obs.items()
@@ -1289,7 +1300,7 @@ class Experiment(collective_experiment.Experiment):
             start_time = time.time()
             if exp_config.evaluate_transformer=="collective_network":
                 result = self.evaluate_transformer(
-                    agent=self.col_agent, vec_env=self.envs["eval"], step=step, episode=episode, seq_len=self.seq_len, sample_actions=(step==0), reward_unscaled=exp_config.use_unscaled
+                    agent=self.col_agent, vec_env=self.envs["train"], step=step, episode=episode, seq_len=self.seq_len, sample_actions=(step==0), reward_unscaled=exp_config.use_unscaled
                 )
             elif exp_config.evaluate_transformer=="agent":
                 result = self.evaluate_vec_env_of_tasks(
@@ -1474,6 +1485,148 @@ class Experiment(collective_experiment.Experiment):
         """
         raise NotImplementedError
 
+    def collect_col_agent_trajectories(self, num_episodes: int):
+        tasks = [1]
+        print(f"Starting data generation from collective agent for {len(tasks)} tasks...")
+        exp_config = self.config.experiment
+
+        #vec_env = self.envs["train"]
+        vec_env = self.envs["eval"]
+
+
+        if "success" in self.metrics_to_track:
+            success = np.full(shape=vec_env.num_envs, fill_value=0.0)
+
+
+
+        episode_reward, _ , done = [
+            np.full(shape=vec_env.num_envs, fill_value=fill_value)
+            for fill_value in [0.0, 0, True]
+        ]  # (num_envs, 1)
+
+        info = {}
+
+        start_time = time.time()
+
+        col_obs = vec_env.reset()
+        states = torch.cat((col_obs['env_obs'][:,:18], col_obs['env_obs'][:,36:]), dim=1).float()[:, None]
+        actions = torch.empty(vec_env.num_envs, 0, 4)
+        rewards = torch.empty(vec_env.num_envs, 0, 1)
+
+        action = np.asarray([self.action_space.sample() for _ in range(vec_env.num_envs)])
+
+        self.logger.dump(0)
+
+        step = 0
+        for episode in range(1,num_episodes+1):
+            print(f"  Episode {episode}/{num_episodes}")
+
+            start_time = time.time()
+
+
+            episode_reward = np.full(shape=vec_env.num_envs, fill_value=0.0)
+            if "success" in self.metrics_to_track:
+                success = np.full(shape=vec_env.num_envs, fill_value=0.0)
+
+            self.logger.log("train/episode", episode, step)
+
+            for episode_step in range(self.max_episode_steps):
+
+                mu, log_std, q_val = self.col_agent.calculate_q_targets_expert_action(
+                                            states=states[self.env_indices],
+                                            actions=actions[self.env_indices],
+                                            rewards=rewards[self.env_indices],
+                                            task_ids=torch.tensor(self.task_num[self.env_indices_i])
+                                        )
+                
+                action = mu
+                
+                # safe the encoding for later evalutation
+                encoding = self.col_agent.calculate_task_encoding(
+                    states=states[self.env_indices],
+                    actions=actions[self.env_indices],
+                    rewards=rewards[self.env_indices],
+                    task_ids=torch.tensor(self.task_num[self.env_indices_i])
+                )
+
+                next_col_obs, reward, done, info = vec_env.step(action)
+
+                if exp_config.use_unscaled:
+                    reward = info['unscaled_reward']
+
+                episode_reward += reward
+                if "success" in self.metrics_to_track:
+                    success += info['success']
+
+                new_state = torch.cat((next_col_obs['env_obs'][:,:18], next_col_obs['env_obs'][:,36:]), dim=1).float()[:, None]
+                new_action = torch.tensor(action).float()[:, None]
+                new_reward = torch.tensor(reward).float()[:, None, None]
+
+                states = torch.cat((states[:, -self.seq_len+1:], new_state), dim=1)
+                actions = torch.cat((actions[:, -self.seq_len+2:], new_action), dim=1)
+                rewards = torch.cat((rewards[:, -self.seq_len+2:], new_reward), dim=1)
+
+                if self.should_reset_env_manually:
+                    if (episode_step + 1) % self.max_episode_steps == 0:
+                        if exp_config.reset_goal_state:
+                            self.reset_goal_locations_in_order()
+                        #next_col_obs = vec_env.reset()
+                        states = torch.cat((next_col_obs['env_obs'][:,:18], next_col_obs['env_obs'][:,36:]), dim=1).float()[:, None]
+                        actions = torch.empty(vec_env.num_envs, 0, 4)
+                        rewards = torch.empty(vec_env.num_envs, 0, 1)
+                        print(states)
+                        
+                # allow infinite bootstrap
+                for index in self.env_indices_i:
+                    done_bool = (
+                        0
+                        if episode_step + 1 == self.max_episode_steps
+                        else float(done[self.env_indices[index]])
+                    )
+                    self.replay_buffer.add(
+                        col_obs["env_obs"][self.env_indices[index]],
+                        next_col_obs["env_obs"][self.env_indices[index]],
+                        action[self.env_indices[index]],
+                        reward[self.env_indices[index]],
+                        done=done_bool,
+                        task_obs=self.env_indices[index],
+                        encoding=encoding.detach().cpu().numpy(),
+                        q_value=q_val,
+                        mu=mu,
+                        log_std=log_std,
+                    )
+                col_obs = next_col_obs
+                step += 1
+
+            if "success" in self.metrics_to_track:
+                success = (success > 0).astype("float")
+                for index in self.env_indices:
+                    self.logger.log(
+                        f"train/success_env_index_{index}",
+                        success[index],
+                        step,
+                    )
+                success = success[self.env_indices]
+                self.logger.log("train/success", success.mean(), step)
+            for index in self.env_indices:
+                self.logger.log(
+                    f"train/episode_reward_env_index_{index}",
+                    episode_reward[index],
+                    step,
+                )
+            self.logger.log("train/duration", time.time() - start_time, step)
+            self.logger.dump(step)
+
+            print(f"    → Episode done in {step} steps, total reward: {episode_reward.mean():.2f}")
+
+        self.close_envs()
+        print("\nData generation complete.")
+        print(f"Replay buffer now contains {len(self.replay_buffer)} transitions.")
+
+
+
+
+
     def generate_data_from_col_agent(self, tasks: List[str], num_episodes_per_task: int = 5) -> None:
         """Generate rollouts by running the collective agent policy for each task.
         Transitions are stored with Q-values, policy parameters, and encodings.
@@ -1485,24 +1638,22 @@ class Experiment(collective_experiment.Experiment):
 
         for task_idx, task_name in enumerate(tasks):
             print(f"\n[Task {task_idx}] Generating data for task: {task_name}")
-            task_data = random.choice(self.env_name_task_dict[task_name])
-            self.envs["train"].call("set_task", task_data)
+            #task_data = random.choice(self.env_name_task_dict[task_name])
+            #self.envs["train"].call("set_task", task_data)
+            vec_env = self.envs["train"]
 
             for ep in range(num_episodes_per_task):
                 print(f"  Episode {ep+1}/{num_episodes_per_task}")
-                obs = self.envs["train"].reset()
+                obs = vec_env.reset()
                 done = False
                 step = 0
                 episode_reward = 0.0
 
-                raw = obs["env_obs"][0]
-                raw_np = raw.cpu().numpy() if hasattr(raw, 'cpu') else raw
-                s = np.concatenate([raw_np[:18], raw_np[36:]], axis=-1)
-                states = torch.tensor(s, dtype=torch.float32, device=self.device)[None, None, :]
-                actions = torch.empty(1, 0, action_dim, device=self.device)
-                rewards = torch.empty(1, 0, 1, device=self.device)
+                states = torch.cat((obs['env_obs'][:,:18], obs['env_obs'][:,36:]), dim=1).float()[:, None]
+                actions = torch.empty(vec_env.num_envs, 0, 4)
+                rewards = torch.empty(vec_env.num_envs, 0, 1)
 
-                while not done and step < self.config.experiment.distill_ds_steps:
+                while step < self.max_episode_steps:
                     with agent_utils.eval_mode(self.col_agent):
                         mu, log_std, q_val = self.col_agent.calculate_q_targets_expert_action(
                             states=states,
@@ -1517,11 +1668,19 @@ class Experiment(collective_experiment.Experiment):
                             task_ids=torch.tensor([[task_idx]], device=self.device),
                         )
 
-                    action_np = mu[0]
+                    # Ensure action has shape (num_envs, action_dim)
+                    action_np = mu[0].reshape(1, -1)
 
-                    next_obs, reward_arr, done_arr, info = self.envs["train"].step(action_np)
-                    reward = float(reward_arr[0])
+                    next_obs, reward_arr, done_arr, info = vec_env.step(action_np)
                     done = bool(done_arr[0])
+                    # handle truncated episodes
+                    if isinstance(info, (list, tuple)) and info and "TimeLimit.truncated" in info[0]:
+                        done = True
+
+                    if True: #if exp_config.use_unscaled:
+                        reward_arr = info['unscaled_reward']
+                    reward = float(reward_arr[0])
+                    #print(reward)
                     episode_reward += reward
 
                     raw_next = next_obs["env_obs"][0]
@@ -1529,9 +1688,9 @@ class Experiment(collective_experiment.Experiment):
                     s_next = np.concatenate([raw_next_np[:18], raw_next_np[36:]], axis=-1)
 
                     self.replay_buffer.add(
-                        env_obs=raw_np,
+                        env_obs=obs["env_obs"][0],
                         next_env_obs=raw_next_np,
-                        action=action_np,
+                        action=action_np[0],  # single action
                         reward=np.array([reward], dtype=np.float32),
                         done=done,
                         task_obs=np.array([task_idx], dtype=np.int64),
@@ -1541,15 +1700,17 @@ class Experiment(collective_experiment.Experiment):
                         log_std=log_std
                     )
 
+                    # slide sequences
                     s = s_next
                     new_state = torch.tensor(s, dtype=torch.float32, device=self.device)[None, None, :]
-                    new_action = torch.tensor(action_np, dtype=torch.float32, device=self.device)[None, None, :]
+                    new_action = torch.tensor(action_np[0], dtype=torch.float32, device=self.device)[None, None, :]
                     new_reward = torch.tensor([[reward]], dtype=torch.float32, device=self.device)[None, :, :]
 
                     states = torch.cat((states[:, -seq_len+1:], new_state), dim=1)
                     actions = torch.cat((actions[:, -seq_len+2:], new_action), dim=1)
                     rewards = torch.cat((rewards[:, -seq_len+2:], new_reward), dim=1)
 
+                    raw_np = raw_next_np
                     obs = next_obs
                     step += 1
 
@@ -1561,6 +1722,7 @@ class Experiment(collective_experiment.Experiment):
     def distill_policy(self):
         """Run distillation from col_agent to student using KL divergence on logits."""
         exp_config = self.config.experiment
+
         #assert hasattr(self, "col_agent") and hasattr(self, "student_agent")
 
         self.student_agent.train()  # Only the student needs to train
@@ -1573,42 +1735,57 @@ class Experiment(collective_experiment.Experiment):
         start_time = time.time()
 
         if self.replay_buffer.is_empty():
-            tasks = self.config.experiment.distill_tasks
-            self.generate_data_from_col_agent(tasks, num_episodes_per_task=5)
+            #tasks = self.config.experiment.distill_tasks
+            self.collect_col_agent_trajectories(50)
 
+        print(f"Buffer size: {len(self.replay_buffer)}, batch_size: {batch_size}")
+        if len(self.replay_buffer) < batch_size:
+            print("Buffer not sufficiently filled. Abort or wait.")
+            return
 
+        print(len(self.replay_buffer))
         for step in range(distill_steps):
-            print(f"Buffer size: {len(self.replay_buffer)}, batch_size: {batch_size}")
-            if len(self.replay_buffer) < batch_size:
-                print("Buffer not sufficiently filled. Abort or wait.")
-                return
 
             sample: ReplayBufferSample = self.replay_buffer.sample(batch_size)
+            #print(sample)
             obs = sample.env_obs.to(self.device)
+            task_obs = sample.task_obs.to(self.device)
+            task_encoding = sample.task_encoding
 
 
-            # Get teacher logits (e.g., Q-values or action logits)
-            with torch.no_grad():
-                teacher_logits = self.col_agent.get_action_logits(obs) / temperature
-                teacher_probs = torch.softmax(teacher_logits, dim=-1)
+            task_info = self.student_agent.get_task_info(
+                task_encoding=task_encoding,
+                component_name="actor",
+                env_index=task_obs
+            )
 
-            # Get student logits
-            student_logits = self.student_agent.get_action_logits(obs) / temperature
-            student_log_probs = torch.log_softmax(student_logits, dim=-1)
+            from mtrl.agent.ds.mt_obs import MTObs
+            mtobs = MTObs(env_obs=obs, task_obs=task_obs, task_info=task_info)
+
+
+            # Teacher (from buffer)
+            teacher_mu = sample.policy_mu        # shape [B, action_dim]
+            teacher_log_std = sample.policy_log_std
+
+            # You need to call the student's actor forward to get mu/log_std
+            student_mu,_,_, student_log_std = self.student_agent.actor(mtobs)
+
+            # Compute KL between diagonal Gaussians
+            teacher_var = torch.exp(2 * teacher_log_std)
+            student_var = torch.exp(2 * student_log_std)
 
             # KL Divergence loss
-            loss = torch.nn.functional.kl_div(
-                student_log_probs,
-                teacher_probs,
-                reduction='batchmean',
-                log_target=False
-            ) * (temperature ** 2)
+            kl_div = 0.5 * (
+                (teacher_var + (teacher_mu - student_mu)**2) / student_var
+                + 2 * student_log_std - 2 * teacher_log_std - 1
+            ).sum(dim=-1).mean()  # mean over batch
+            loss = kl_div
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if step % exp_config.log_interval == 0:
+            if step % 500 == 0:
                 self.logger.log("distill/loss", loss.item(), step)
                 self.logger.log("distill/duration", time.time() - start_time, step)
                 self.logger.dump(step)
@@ -1622,6 +1799,12 @@ class Experiment(collective_experiment.Experiment):
                     retain_last_n=exp_config.save.model.retain_last_n,
                 )
 
+        self.student_agent.save(
+            self.student_model_dir,
+            step=step,
+            retain_last_n=exp_config.save.model.retain_last_n,
+        )
         self.close_envs()
         print("Finished policy distillation.")
+
 

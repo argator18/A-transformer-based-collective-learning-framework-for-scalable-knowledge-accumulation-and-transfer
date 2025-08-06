@@ -190,7 +190,7 @@ class Agent(AbstractAgent):
             sample (bool): sample (if `True`) or select (if `False`) an action.
 
         Returns:
-            np.ndarray: selected/sample action.
+            np.ndarray: selected/sampled action.
 
         """
         env_obs = multitask_obs["env_obs"]

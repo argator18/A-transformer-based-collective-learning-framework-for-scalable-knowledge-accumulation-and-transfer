@@ -12,7 +12,10 @@ else:
 chunks = os.listdir(path)
 #name = 'button-press-topdown2'
 for name in chunks:
-    df = pd.read_csv(f'{path}/{name}') 
+    full_path = os.path.join(path, name)
+    if os.path.isdir(full_path):
+        continue
+    df = pd.read_csv(full_path) 
 
     # Calculate moving average
     window_size = 5  # Adjust the window size for smoothing

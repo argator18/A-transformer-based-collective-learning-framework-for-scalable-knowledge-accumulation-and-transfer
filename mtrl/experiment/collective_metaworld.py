@@ -59,13 +59,14 @@ class Experiment(collective_learning.Experiment):
             build_vec_func_list = env_builder.build_metaworld_env_list
 
         envs = {}
-        mode = "train"
-        envs[mode], env_id_to_task_map = build_vec_func(
-            config=self.config, benchmark=benchmark, mode=mode, env_id_to_task_map=None
+        envs["train"], env_id_to_task_map = build_vec_func(
+            config=self.config,
+            benchmark=benchmark,
+            mode="train",
+            env_id_to_task_map=None
         )
         self.env_id_to_task_map = env_id_to_task_map 
-        mode = "eval"
-        envs[mode], env_id_to_task_map = build_vec_func(
+        envs["eval"], env_id_to_task_map = build_vec_func(
             config=self.config,
             benchmark=benchmark,
             mode="train",
@@ -83,14 +84,12 @@ class Experiment(collective_learning.Experiment):
             ordered_task_list=list(env_id_to_task_map.keys()),
         )
 
-        ### andi
         self.list_envs, self.env_id_to_task_map_recording = build_vec_func_list(
             config=self.config,
             benchmark=benchmark,
             mode="train",
             env_id_to_task_map=self.env_id_to_task_map ,
         )
-        ### andi
 
         return envs, metadata
     
@@ -212,6 +211,7 @@ class Experiment(collective_learning.Experiment):
         multitask_obs = vec_env.reset()  # (num_envs, 9, 84, 84)
 
         states = torch.cat((multitask_obs['env_obs'][:,:18], multitask_obs['env_obs'][:,36:]), dim=1).float()[:, None]
+        print(states)
         actions = torch.empty(vec_env.num_envs, 0, 4)
         rewards = torch.empty(vec_env.num_envs, 0, 1)
         #if cls_token:
@@ -222,14 +222,14 @@ class Experiment(collective_learning.Experiment):
 
             with agent_utils.eval_mode(agent):
                 if sample_actions:
-                    action[self.env_indices] = agent.select_action(
+                    action[self.env_indices] = agent.sample_action(
                         states=states[self.env_indices],
                         actions=actions[self.env_indices],
                         rewards=rewards[self.env_indices],
                         task_ids=torch.tensor(self.task_num[self.env_indices_i])
                     )
                 else:
-                    action[self.env_indices] = agent.sample_action(
+                    action[self.env_indices] = agent.select_action(
                         states=states[self.env_indices],
                         actions=actions[self.env_indices],
                         rewards=rewards[self.env_indices],
@@ -251,6 +251,7 @@ class Experiment(collective_learning.Experiment):
             # ---
             
             multitask_obs, reward, done, info = vec_env.step(action)
+            #print(reward,info['unscaled_reward'])
             if reward_unscaled:
                 reward = info['unscaled_reward']
 
